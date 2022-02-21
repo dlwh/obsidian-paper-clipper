@@ -1,5 +1,5 @@
 import {App, Notice, Plugin, PluginSettingTab, Setting, TFile} from 'obsidian';
-import {Article, search_for_articles_by_id} from "./arxiv-api";
+import {Article, extract_arxiv_id_from_url, search_for_articles_by_id} from "./arxiv-api";
 import AsyncSuggestionModal from "./AsyncSuggestionModal";
 
 const Mustache = require('mustache');
@@ -19,11 +19,6 @@ export default class ArxivGetter extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'ArXiv Getter', async (evt: MouseEvent) => {
-			new Notice('This is a notice!');
-		});
 
 		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
@@ -102,15 +97,6 @@ interface ArticleTemplateFields extends Article {
 	url: string;
 }
 
-function extract_arxiv_id_from_url(query: string, keep_version: boolean): string|undefined {
-	const id_match = query.match(/^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|pdf)\/([0-9.]+)[^.]*(?:\.pdf)?$/);
-	if (id_match) {
-		if (!keep_version) {
-			return id_match[1].split('v')[0];
-		}
-		return id_match[1];
-	}
-}
 
 class ArxivGetterModal extends AsyncSuggestionModal<Article> {
 
