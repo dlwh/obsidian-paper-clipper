@@ -1,72 +1,41 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import {App, Notice, Plugin, PluginSettingTab, Setting, TFile} from 'obsidian';
+import {Article, search_for_articles_by_id} from "./arxiv-api";
+import AsyncSuggestionModal from "./AsyncSuggestionModal";
 
-// Remember to rename these classes and interfaces!
+const Mustache = require('mustache');
 
-interface MyPluginSettings {
-	mySetting: string;
+interface ArxivGetterSettings {
+	paperTemplate?: string;
+	titleTemplate?: string;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+const DEFAULT_SETTINGS: ArxivGetterSettings = {
+	paperTemplate: '',
+	titleTemplate: '{{id}}'
 }
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class ArxivGetter extends Plugin {
+	settings: ArxivGetterSettings;
 
 	async onload() {
 		await this.loadSettings();
 
 		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
+		const ribbonIconEl = this.addRibbonIcon('dice', 'ArXiv Getter', async (evt: MouseEvent) => {
 			new Notice('This is a notice!');
 		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
 
 		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
+			id: 'open-arxiv-paper-getter',
+			name: 'Retrieve a paper by ID or URL',
 			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
+				new ArxivGetterModal(this).open();
 			}
 		});
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new ArxivGetterSettingTab(this.app, this));
 
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
@@ -89,28 +58,111 @@ export default class MyPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+	createNote(article: Article) {
+		const fields = this.makeTemplateFields(article);
+		const template  = this.loadTemplate();
+		const titleTemplate: string = this.settings.titleTemplate || "";
+		let title = Mustache.render(titleTemplate, fields);
+		if (!title.endsWith(".md")) {
+			title += ".md";
+		}
+		template.then(template => {
+			const note = Mustache.render(template, fields);
+			console.log("creating a note with title:", title, note);
+			this.app.vault.create(title, note).then( (f: TFile) => {
+				this.app.workspace.getLeaf(false).openFile(f);
+			});
+		});
 	}
 
+	makeTemplateFields(article: Article):ArticleTemplateFields {
+		const date = new Date().toISOString().split('T')[0];
+		const real_id = extract_arxiv_id_from_url(article.id, false);
+		return {...article, date, id: real_id, url: article.id}
+	}
+
+	loadTemplate(): Promise<string> {
+		if (!this.settings.paperTemplate) {
+			return Promise.resolve("");
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(this.settings.paperTemplate + ".md");
+		if (!file) {
+			return Promise.resolve("");
+		}
+
+		return this.app.vault.cachedRead(file as TFile)
+
+	}
+}
+
+interface ArticleTemplateFields extends Article {
+	date: string;
+	url: string;
+}
+
+function extract_arxiv_id_from_url(query: string, keep_version: boolean): string|undefined {
+	const id_match = query.match(/^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|pdf)\/([0-9.]+)[^.]*(?:\.pdf)?$/);
+	if (id_match) {
+		if (!keep_version) {
+			return id_match[1].split('v')[0];
+		}
+		return id_match[1];
+	}
+}
+
+class ArxivGetterModal extends AsyncSuggestionModal<Article> {
+
+	constructor(plugin: ArxivGetter) {
+		super(plugin.app);
+		this.plugin = plugin;
+	}
+
+	articles?: Article[];
+	plugin: ArxivGetter;
+
 	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
+		const {inputEl} = this;
+		console.log(inputEl);
+		this.setPlaceholder("Enter a paper ID or URL");
+		inputEl.focus()
 	}
 
 	onClose() {
 		const {contentEl} = this;
 		contentEl.empty();
 	}
+
+	getSuggestionsAsync(query: string): Promise<Article[]> {
+		// query can either be an id or a url from arxiv
+		// if it's a url, we'll extract the id from the url
+		// arxiv urls look like https://arxiv.org/abs/1812.01097 or https://arxiv.org/pdf/1812.01097(.pdf)?
+		// we'll extract the id from the url
+		const id = extract_arxiv_id_from_url(query, true);
+		if (id)	{
+			query = id
+		}
+		return search_for_articles_by_id(query).then(articles => {
+			return articles;
+		});
+	}
+
+	onChooseSuggestion(item: Article, evt: MouseEvent | KeyboardEvent): any {
+		// TODO: should we insert into the current note sometimes?
+		console.log("Chose", item);
+		this.plugin.createNote(item);
+	}
+
+	renderSuggestion(value: Article, el: HTMLElement): void {
+		el.innerText = value.title;
+	}
 }
 
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+class ArxivGetterSettingTab extends PluginSettingTab {
+	plugin: ArxivGetter;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: ArxivGetter) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -120,18 +172,33 @@ class SampleSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
+		containerEl.createEl('h2', {text: 'Settings for my ArXiv Getter.'});
 
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
+			.setName('Paper Note Template')
+			.setDesc('Note to use as a template for new papers')
 			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
+				.setPlaceholder('Enter path to template')
+				.setValue(this.plugin.settings.paperTemplate)
 				.onChange(async (value) => {
-					console.log('Secret: ' + value);
-					this.plugin.settings.mySetting = value;
+					if (value && this.plugin.app.vault.getAbstractFileByPath(value) == null) {
+						new Notice("The template file doesn't exist in the vault.", 5000)
+					}
+					this.plugin.settings.paperTemplate = value;
 					await this.plugin.saveSettings();
 				}));
+
+
+		new Setting(containerEl)
+			.setName('Paper Note Title Template')
+			.setDesc('Template title to use for new notes')
+			.addText(text => text
+				.setPlaceholder('Enter title')
+				.setValue(this.plugin.settings.titleTemplate)
+				.onChange(async (value) => {
+					this.plugin.settings.titleTemplate = value;
+					await this.plugin.saveSettings();
+				}));
+
 	}
 }
