@@ -5,12 +5,14 @@ import AwesomeDebouncePromise from "awesome-debounce-promise";
 interface SuggestModalExt<T> extends SuggestModal<T> {
     chooser: ChooserExt<T>;
 }
+
 interface ChooserExt<T> {
     useSelectedItem(evt: MouseEvent | KeyboardEvent): void;
     setSuggestions(suggestions: T[]): void;
 }
 
 // This class is similar to SuggestionModal, but it is used for async suggestions.
+// TODO: it depends on internals of Obsidian, so would be good to upstream...
 export default abstract class AsyncSuggestionModal<T> extends SuggestModal<T> {
 
     constructor(app: App) {
@@ -43,6 +45,4 @@ export default abstract class AsyncSuggestionModal<T> extends SuggestModal<T> {
     }
 
     abstract getSuggestionsAsync(query: string): Promise<T[]>;
-    // abstract renderSuggestion(value: T, el: HTMLElement): any;
-    // abstract onChooseSuggestion(item: T, evt: MouseEvent | KeyboardEvent): any;
 }
