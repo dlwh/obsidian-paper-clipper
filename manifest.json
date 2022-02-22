@@ -1,9 +1,9 @@
 {
-	"id": "obsidian-arxiv-getter",
-	"name": "Obsidian ArXiv Getter",
+	"id": "obsidian-paper-clipper",
+	"name": "Obsidian Paper Clipper",
 	"version": "1.0.1",
 	"minAppVersion": "0.12.0",
-	"description": "This extensions inserts metadata from ArXiv into a note.",
+	"description": "This extensions inserts metadata from ArXiv into a new note.",
 	"author": "David Hall",
 	"authorUrl": "https://github.com/dlwh",
 	"isDesktopOnly": false
