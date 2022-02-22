@@ -1,6 +1,6 @@
 {
 	"id": "obsidian-paper-clipper",
-	"name": "Obsidian Paper Clipper",
+	"name": "Paper Clipper",
 	"version": "1.0.1",
 	"minAppVersion": "0.12.0",
 	"description": "This extensions inserts metadata from ArXiv into a new note.",
