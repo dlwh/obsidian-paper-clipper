@@ -74,7 +74,9 @@ export default class ArxivGetter extends Plugin {
 	makeTemplateFields(article: Article):ArticleTemplateFields {
 		const date = new Date().toISOString().split('T')[0];
 		const real_id = extract_arxiv_id_from_url(article.id, false);
-		return {...article, date, id: real_id, url: article.id}
+		const authorLinks = article.authors.map(a => `[[${a}]]`).join(', ');
+		const abstract = article.abstract.replace(/\s+/g, ' ');
+		return {...article, date, id: real_id, url: article.id, authorLinks, abstract}
 	}
 
 	loadTemplate(): Promise<string> {
@@ -95,6 +97,7 @@ export default class ArxivGetter extends Plugin {
 interface ArticleTemplateFields extends Article {
 	date: string;
 	url: string;
+	authorLinks: string;
 }
 
 
@@ -158,7 +161,7 @@ class ArxivGetterSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Settings for my ArXiv Getter.'});
+		containerEl.createEl('h2', {text: 'Settings for ArXiv Getter.'});
 
 		new Setting(containerEl)
 			.setName('Paper Note Template')
@@ -185,6 +188,38 @@ class ArxivGetterSettingTab extends PluginSettingTab {
 					this.plugin.settings.titleTemplate = value;
 					await this.plugin.saveSettings();
 				}));
+
+		let settings_info_div = containerEl.createDiv({});
+		let info = containerEl.createEl('p', {
+			text: 'The template is a markdown file with templates rendered via mustache,' +
+				'which means you should use triple {{{}}} to handle html in the way you probably want.' +
+				'The title is also a mustache template.' +
+				'You can use the following variables:'});
+		settings_info_div.appendChild(info);
+		let list = containerEl.createEl('ul');
+		// NOTE: Keep synced with Article and ArticleTemplateFields
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{title}}} - the title of the paper'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{authors}}} - the authors of the paper. Will be comma separated'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{authorLinks}}} - the authors of the paper formatted as Obsidian links. Will be comma separated'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: "{{{date}}} - today's date"}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{url}}} - the url of the paper'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{id}}} - the arxiv id of the paper'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{pdf}}} - the url of the pdf of the paper'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{abstract}}} - the abstract of the paper'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{published}}} - the published date of the paper'}));
+		list.appendChild(containerEl.createEl('li', {
+			text: '{{{updated}}} - the updated date of the paper'}));
+
+
 
 	}
 }
