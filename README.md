@@ -1,7 +1,32 @@
-## Obsidian Sample Plugin
+## Obsidian Paper Clipper
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+This is a plugin for [Obsidian](https://obsidian.md) that extracts meta information from ArXiv papers and creates a note.
 
+The basic workflow is that you can run the command "Retrieve a paper by url or ID" and it will automatically create a note with the meta information.
+
+The note's title and contents are controlled by settings. The contents are generated via a template note that you can specify.
+The title is likewise synthesized from a template.
+
+This works well for me. Note that there are triple curl braces in the template. This is because we're using the [Mustache](https://mustache.github.io/) templating engine,
+and this stops it from escaping the HTML entities etc.
+
+```markdown
+# {{{title}}}
+**URL**:: {{{url}}}
+**PDF**:: {{{pdf}}}
+**Date added**:: {{{date}}}
+**Authors**:: {{{authorLinks}}}
+**Tags**:: 
+
+## Abstract
+> {{{abstract}}}
+## Notes
+```
+
+I aspire to support more than just ArXiv papers, and will add things as useful
+
+
+## Sample Plugin Information
 This project uses Typescript to provide type checking and documentation.
 The repo depends on the latest plugin API (obsidian.d.ts) in Typescript Definition format, which contains TSDoc comments describing what it does.
 
