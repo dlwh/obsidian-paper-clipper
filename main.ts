@@ -43,21 +43,37 @@ export default class PaperClipper extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	createNote(article: Article) {
+	async createNote(article: Article) {
 		const fields = this.makeTemplateFields(article);
-		const template  = this.loadTemplate();
 		const titleTemplate: string = this.settings.titleTemplate || "";
 		let title = Mustache.render(titleTemplate, fields);
 		if (!title.endsWith(".md")) {
 			title += ".md";
 		}
-		template.then(template => {
-			const note = Mustache.render(template, fields);
-			console.log("creating a note with title:", title, note);
-			this.app.vault.create(title, note).then( (f: TFile) => {
-				this.app.workspace.getLeaf(false).openFile(f);
-			});
-		});
+		const template = await this.loadTemplate();
+		const note = Mustache.render(template, fields);
+		console.log("creating a note with title:", title, note);
+		let f: TFile|null = null;
+		try {
+			f = await this.app.vault.create(title, note);
+		} catch (e) {
+			console.error(e);
+			new Notice(`Failed to create note with title ${title}: ${e}`);
+			throw e;
+		}
+		if (!f) {
+			try {
+				const tafile = await this.app.vault.getAbstractFileByPath(title)
+				if (tafile instanceof TFile) {
+					f = tafile;
+				}
+			} catch (e) {
+				console.error(e);
+				new Notice(`Failed to get note with title ${title}: ${e}`);
+				throw e;
+			}
+		}
+		await this.app.workspace.getLeaf(false).openFile(f);
 	}
 
 	makeTemplateFields(article: Article):ArticleTemplateFields {
@@ -65,7 +81,8 @@ export default class PaperClipper extends Plugin {
 		const real_id = extract_arxiv_id_from_url(article.id, false);
 		const authorLinks = article.authors.map(a => `[[${a}]]`).join(', ');
 		const abstract = article.abstract.replace(/\s+/g, ' ');
-		return {...article, date, id: real_id, url: article.id, authorLinks, abstract}
+		const title = article.title.replace(/\s+/g, ' ');
+		return {...article, date, id: real_id, url: article.id, authorLinks, abstract, title}
 	}
 
 	loadTemplate(): Promise<string> {
@@ -112,7 +129,7 @@ class PaperClipperModal extends AsyncSuggestionModal<Article> {
 		contentEl.empty();
 	}
 
-	getSuggestionsAsync(query: string): Promise<Article[]> {
+	async getSuggestionsAsync(query: string): Promise<Article[]> {
 		// query can either be an id or a url from arxiv
 		// if it's a url, we'll extract the id from the url
 		// arxiv urls look like https://arxiv.org/abs/1812.01097 or https://arxiv.org/pdf/1812.01097(.pdf)?
@@ -121,15 +138,13 @@ class PaperClipperModal extends AsyncSuggestionModal<Article> {
 		if (id)	{
 			query = id
 		}
-		return search_for_articles_by_id(query).then(articles => {
-			return articles;
-		});
+		return await search_for_articles_by_id(query);
 	}
 
-	onChooseSuggestion(item: Article, evt: MouseEvent | KeyboardEvent): any {
+	onChooseSuggestion(item: Article, evt: MouseEvent | KeyboardEvent): Promise<any> {
 		// TODO: should we insert into the current note sometimes?
 		console.log("Chose", item);
-		this.plugin.createNote(item);
+		return this.plugin.createNote(item);
 	}
 
 	renderSuggestion(value: Article, el: HTMLElement): void {

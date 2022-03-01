@@ -15,27 +15,27 @@ interface ChooserExt<T> {
 // TODO: it depends on internals of Obsidian, so would be good to upstream...
 export default abstract class AsyncSuggestionModal<T> extends SuggestModal<T> {
 
-    constructor(app: App) {
+    protected constructor(app: App) {
         super(app);
     }
 
     // This is hacky. It intercepts the super's setSuggestions method, makes it async+debounced.
-    updateSuggestions = () => {
+    updateSuggestions = async () => {
         const t = this.inputEl.value;
-        this.getSuggestionsDebounced(t).then(e => {
-            if (e.length > 0) {
-                if(this.limit && this.limit > 0) {
-                    e = e.slice(0, this.limit);
-                }
-                (this as unknown as SuggestModalExt<T>).chooser.setSuggestions(e);
-            } else {
-                if (t) {
-                    this.onNoSuggestion()
-                } else {
-                    (this as unknown as SuggestModalExt<T>).chooser.setSuggestions(null);
-                }
+        let e = await this.getSuggestionsDebounced(t)
+        console.log("got suggestions", e);
+        if (e.length > 0) {
+            if(this.limit && this.limit > 0) {
+                e = e.slice(0, this.limit);
             }
-        });
+            (this as unknown as SuggestModalExt<T>).chooser.setSuggestions(e);
+        } else {
+            if (t) {
+                this.onNoSuggestion()
+            } else {
+                (this as unknown as SuggestModalExt<T>).chooser.setSuggestions(null);
+            }
+        }
     }
 
     private getSuggestionsDebounced = AwesomeDebouncePromise(this.getSuggestionsAsync, 250);
