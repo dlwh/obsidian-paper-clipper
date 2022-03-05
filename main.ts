@@ -1,4 +1,4 @@
-import {App, Notice, Plugin, PluginSettingTab, Setting, TFile} from 'obsidian';
+import {App, debounce, Notice, Plugin, PluginSettingTab, Setting, TFile} from 'obsidian';
 import {Article, extract_arxiv_id_from_url, search_for_articles_by_id} from "./arxiv-api";
 import AsyncSuggestionModal from "./AsyncSuggestionModal";
 
@@ -10,9 +10,20 @@ interface PaperClipperSettings {
 }
 
 const DEFAULT_SETTINGS: PaperClipperSettings = {
-	paperTemplate: '',
+	paperTemplate: "",
 	titleTemplate: '{{id}}'
 }
+
+const DEFAULT_TEMPLATE = `
+# {{{title}}}
+**URL**:: {{{url}}}
+**PDF**:: {{{pdf}}}
+**Authors**:: {{{authorLinks}}}
+**Tags**:: 
+
+## Abstract
+> {{{abstract}}}
+## Notes`;
 
 export default class PaperClipper extends Plugin {
 	settings: PaperClipperSettings;
@@ -43,7 +54,7 @@ export default class PaperClipper extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	async createNote(article: Article) {
+	async createNote(article: Article): Promise<void> {
 		const fields = this.makeTemplateFields(article);
 		const titleTemplate: string = this.settings.titleTemplate || "";
 		let title = Mustache.render(titleTemplate, fields);
@@ -87,12 +98,17 @@ export default class PaperClipper extends Plugin {
 
 	loadTemplate(): Promise<string> {
 		if (!this.settings.paperTemplate) {
-			return Promise.resolve("");
+			return Promise.resolve(DEFAULT_TEMPLATE);
 		}
 
-		const file = this.app.vault.getAbstractFileByPath(this.settings.paperTemplate + ".md");
+		let path = this.settings.paperTemplate;
+		if (!path.endsWith(".md")) {
+			path = `${path}.md`;
+		}
+		const file = this.app.vault.getAbstractFileByPath(path);
 		if (!file) {
-			return Promise.resolve("");
+			new Notice(`Failed to load template file ${path}. Using default template.`);
+			return Promise.resolve(DEFAULT_TEMPLATE);
 		}
 
 		return this.app.vault.cachedRead(file as TFile)
@@ -141,7 +157,7 @@ class PaperClipperModal extends AsyncSuggestionModal<Article> {
 		return await search_for_articles_by_id(query);
 	}
 
-	onChooseSuggestion(item: Article, evt: MouseEvent | KeyboardEvent): Promise<any> {
+	onChooseSuggestion(item: Article, evt: MouseEvent | KeyboardEvent): Promise<void> {
 		// TODO: should we insert into the current note sometimes?
 		console.log("Chose", item);
 		return this.plugin.createNote(item);
@@ -165,7 +181,16 @@ class PaperClipperSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Settings for Paper Clipper.'});
+		containerEl.createEl('h2', {text: 'Settings for Paper Clipper'});
+
+		const setting_update_warning = debounce((value: string) => {
+			if (!value.endsWith(".md")) {
+				value = `${value}.md`;
+			}
+			if (value && this.plugin.app.vault.getAbstractFileByPath(value) == null) {
+				new Notice("The template file doesn't exist in the vault.", 5000)
+			}
+		}, 250, true);
 
 		new Setting(containerEl)
 			.setName('Paper Note Template')
@@ -174,9 +199,7 @@ class PaperClipperSettingTab extends PluginSettingTab {
 				.setPlaceholder('Enter path to template')
 				.setValue(this.plugin.settings.paperTemplate)
 				.onChange(async (value) => {
-					if (value && this.plugin.app.vault.getAbstractFileByPath(value) == null) {
-						new Notice("The template file doesn't exist in the vault.", 5000)
-					}
+					setting_update_warning(value)
 					this.plugin.settings.paperTemplate = value;
 					await this.plugin.saveSettings();
 				}));
@@ -193,14 +216,14 @@ class PaperClipperSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		let settings_info_div = containerEl.createDiv({});
-		let info = containerEl.createEl('p', {
+		const settings_info_div = containerEl.createDiv({});
+		const info = containerEl.createEl('p', {
 			text: 'The template is a markdown file with templates rendered via mustache,' +
 				'which means you should use triple {{{}}} to handle html in the way you probably want.' +
 				'The title is also a mustache template.' +
 				'You can use the following variables:'});
 		settings_info_div.appendChild(info);
-		let list = containerEl.createEl('ul');
+		const list = containerEl.createEl('ul');
 		// NOTE: Keep synced with Article and ArticleTemplateFields
 		list.appendChild(containerEl.createEl('li', {
 			text: '{{{title}}} - the title of the paper'}));
